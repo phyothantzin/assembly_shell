@@ -1,6 +1,7 @@
 .section .data
 prompt: .asciz "$ "
 buffer: .space 256
+argv_array: .space 44
 
 .section .text
 .global _start
@@ -80,31 +81,84 @@ end_execute:
   pop {r4-r11, pc}
 
 parse_command:
-  push {lr}
-  mov r0, r0
-  pop {pc}
+  push {r4-r11, lr}
+  ldr r0, =buffer
+
+  ldrb r1, [r0]
+  cmp r1, #0
+  beq parse_fail
+
+  ldr r2, =argv_array
+  str r0, [r2], #4
+
+  mov r3, #0
+_parse_loop:
+  ldrb r4, [r0, r3]
+  cmp r4, #0
+  beq parse_done
+
+  cmp r4, #' '
+  bne _next_char
+
+  mov r5, #0
+  strb r5, [r0, r3]
+
+  add r6, r0, r3
+  add r6, r6, #1
+  str r6, [r2], #4
+_next_char:
+  add r3, r3, #1
+  b _parse_loop
+
+parse_done:
+  mov r5, #0
+  str r5, [r2]
+  mov r0, #1
+  b parse_exit
+parse_fail:
+  mov r0, #0
+parse_exit:
+  pop {r4-r11, pc}
 
 fork_process:
   push {r4-r11, lr}
   mov r7, #2
+  svc #0
+
+  cmp r0, #0
+  blt fork_error
+
+  pop {r4-r11, pc}
+
+fork_error:
+  mov r7, #1
+  mov r0, #1
   svc #0
   pop {r4-r11, pc}
 
 child_process:
   push {r4-r11, lr}
   ldr r0, =buffer
-  mov r1, #0
+  ldr r1, =argv_array
   mov r2, #0
   mov r7, #11
   svc #0
-  mov r7, #1
-  svc #0
 
-wait_for_child:
-  mov r7, #0x72
-  mov r0, #-1
-  mov r1, #0
-  mov r2, #0 
+  mov r7, #1
+  mov r0, #1
   svc #0
   pop {r4-r11, pc}
 
+wait_for_child:
+  push {r4-r11, lr}
+  sub sp, sp, #4
+
+  mov r7, #0x72
+  mov r0, #-1
+  mov r1, sp
+  mov r2, #0
+  mov r3, #0 
+  svc #0
+  
+  add sp, sp, #4
+  pop {r4-r11, pc}
